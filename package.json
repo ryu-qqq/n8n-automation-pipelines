@@ -1,0 +1,37 @@
+{
+  "name": "n8n-automation-pipelines",
+  "version": "1.0.0",
+  "description": "n8n 자동화 파이프라인 구축 프로젝트",
+  "main": "index.js",
+  "scripts": {
+    "start": "docker-compose up -d",
+    "stop": "docker-compose down",
+    "logs": "docker-compose logs -f",
+    "backup": "node scripts/backup-workflows.js",
+    "restore": "node scripts/restore-workflows.js",
+    "dev": "npm run start && npm run logs"
+  },
+  "keywords": [
+    "n8n",
+    "automation",
+    "workflow",
+    "pipelines",
+    "integration"
+  ],
+  "author": "ryu-qqq",
+  "license": "MIT",
+  "dependencies": {
+    "n8n": "^1.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryu-qqq/n8n-automation-pipelines.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ryu-qqq/n8n-automation-pipelines/issues"
+  },
+  "homepage": "https://github.com/ryu-qqq/n8n-automation-pipelines#readme"
+}
