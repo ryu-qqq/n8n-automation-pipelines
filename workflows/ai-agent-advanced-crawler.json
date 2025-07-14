@@ -1,0 +1,323 @@
+{
+  "name": "AI Agent Advanced Crawler",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assignment-1",
+              "name": "config",
+              "value": "{\n  \"type\": \"html\",\n  \"url\": \"https://quotes.toscrape.com\",\n  \"extractors\": {\n    \"quotes\": {\n      \"selector\": \".quote\",\n      \"fields\": {\n        \"text\": \".text::text\",\n        \"author\": \".author::text\",\n        \"tags\": \".tag::text[]\"\n      }\n    }\n  },\n  \"options\": {\n    \"maxResults\": 100,\n    \"chunkSize\": 20,\n    \"timeout\": 10000\n  }\n}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Crawler Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        160,
+        240
+      ],
+      "notes": "크롤러 설정 JSON:\n\n📋 HTML 크롤링 예시:\n{\n  \"type\": \"html\",\n  \"url\": \"https://quotes.toscrape.com\",\n  \"extractors\": {\n    \"quotes\": {\n      \"selector\": \".quote\",\n      \"fields\": {\n        \"text\": \".text::text\",\n        \"author\": \".author::text\"\n      }\n    }\n  },\n  \"options\": {\n    \"maxResults\": 100,\n    \"chunkSize\": 20\n  }\n}\n\n🔌 API 크롤링 예시:\n{\n  \"type\": \"api\",\n  \"url\": \"https://jsonplaceholder.typicode.com/posts\",\n  \"extractors\": {\n    \"posts\": {\n      \"path\": \"$\",\n      \"fields\": {\n        \"title\": \"$.title\",\n        \"body\": \"$.body\",\n        \"userId\": \"$.userId\"\n      }\n    }\n  },\n  \"options\": {\n    \"maxResults\": 50,\n    \"chunkSize\": 10\n  }\n}"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.config.type }}",
+              "rightValue": "api",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-type",
+      "name": "Check Crawler Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.url }}",
+        "options": {
+          "timeout": "={{ $json.config.options?.timeout || 10000 }}"
+        },
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (compatible; n8n-crawler/1.0)",
+          "Accept": "application/json"
+        }
+      },
+      "id": "api-request",
+      "name": "API Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.url }}",
+        "options": {
+          "timeout": "={{ $json.config.options?.timeout || 10000 }}"
+        },
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+      },
+      "id": "html-request",
+      "name": "HTML Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// API 응답 데이터 처리 및 추출\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const config = item.json.config;\n  const responseData = item.json.data || item.json;\n  \n  // 추출기 설정 가져오기\n  const extractors = config.extractors || {};\n  const options = config.options || {};\n  const maxResults = options.maxResults || 1000;\n  const chunkSize = options.chunkSize || 50;\n  \n  const extractedData = {};\n  \n  // 각 추출기에 대해 처리\n  for (const [extractorName, extractorConfig] of Object.entries(extractors)) {\n    try {\n      let targetData = responseData;\n      \n      // JSONPath나 객체 경로로 데이터 접근\n      if (extractorConfig.path) {\n        const path = extractorConfig.path;\n        if (path === '$') {\n          targetData = responseData;\n        } else if (path.startsWith('$.')) {\n          // 간단한 JSONPath 처리\n          const keys = path.substring(2).split('.');\n          for (const key of keys) {\n            if (targetData && targetData[key] !== undefined) {\n              targetData = targetData[key];\n            } else {\n              targetData = null;\n              break;\n            }\n          }\n        }\n      }\n      \n      if (!targetData) {\n        extractedData[extractorName] = [];\n        continue;\n      }\n      \n      // 배열이 아닌 경우 배열로 변환\n      const dataArray = Array.isArray(targetData) ? targetData : [targetData];\n      \n      // 필드 추출\n      const extractedItems = [];\n      for (let i = 0; i < Math.min(dataArray.length, maxResults); i++) {\n        const dataItem = dataArray[i];\n        const extractedItem = {};\n        \n        if (extractorConfig.fields) {\n          for (const [fieldName, fieldPath] of Object.entries(extractorConfig.fields)) {\n            try {\n              if (fieldPath.startsWith('$.')) {\n                // JSONPath 처리\n                const keys = fieldPath.substring(2).split('.');\n                let value = dataItem;\n                for (const key of keys) {\n                  if (value && value[key] !== undefined) {\n                    value = value[key];\n                  } else {\n                    value = null;\n                    break;\n                  }\n                }\n                extractedItem[fieldName] = value;\n              } else {\n                // 직접 필드명\n                extractedItem[fieldName] = dataItem[fieldPath] || null;\n              }\n            } catch (error) {\n              extractedItem[fieldName] = null;\n            }\n          }\n        } else {\n          // 필드 설정이 없으면 전체 데이터\n          extractedItem.data = dataItem;\n        }\n        \n        extractedItems.push(extractedItem);\n      }\n      \n      extractedData[extractorName] = extractedItems;\n      \n    } catch (error) {\n      extractedData[extractorName] = {\n        error: error.message,\n        type: 'extraction_error'\n      };\n    }\n  }\n  \n  // 결과 청킹\n  const chunks = [];\n  for (const [extractorName, data] of Object.entries(extractedData)) {\n    if (Array.isArray(data)) {\n      for (let i = 0; i < data.length; i += chunkSize) {\n        chunks.push({\n          extractor: extractorName,\n          chunk_index: Math.floor(i / chunkSize),\n          total_chunks: Math.ceil(data.length / chunkSize),\n          total_items: data.length,\n          items: data.slice(i, i + chunkSize),\n          config: {\n            url: config.url,\n            type: config.type,\n            timestamp: new Date().toISOString()\n          }\n        });\n      }\n    } else {\n      chunks.push({\n        extractor: extractorName,\n        chunk_index: 0,\n        total_chunks: 1,\n        total_items: 1,\n        items: [data],\n        config: {\n          url: config.url,\n          type: config.type,\n          timestamp: new Date().toISOString()\n        }\n      });\n    }\n  }\n  \n  results.push(...chunks);\n}\n\nreturn results.map(result => ({ json: result }));"
+      },
+      "id": "process-api",
+      "name": "Process API Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "html_content",
+        "extractionValues": {
+          "values": []
+        }
+      },
+      "id": "html-extract",
+      "name": "Extract HTML",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [
+        820,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTML 추출 결과 처리 및 청킹\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const config = item.json.config;\n  const htmlContent = item.json.data;\n  \n  // cheerio 스타일 파싱 시뮬레이션\n  const extractors = config.extractors || {};\n  const options = config.options || {};\n  const maxResults = options.maxResults || 1000;\n  const chunkSize = options.chunkSize || 50;\n  \n  const extractedData = {};\n  \n  // HTML 파싱을 위한 더미 데이터 (실제로는 HTML Extract 노드에서 처리)\n  // 이 부분은 HTML Extract 노드의 설정에 따라 결정됨\n  \n  for (const [extractorName, extractorConfig] of Object.entries(extractors)) {\n    try {\n      // HTML Extract 노드에서 추출된 데이터 사용\n      const extractedItems = item.json[extractorName] || [];\n      \n      // 배열이 아닌 경우 배열로 변환\n      const dataArray = Array.isArray(extractedItems) ? extractedItems : [extractedItems];\n      \n      // 최대 결과 수 제한\n      const limitedData = dataArray.slice(0, maxResults);\n      \n      extractedData[extractorName] = limitedData;\n      \n    } catch (error) {\n      extractedData[extractorName] = {\n        error: error.message,\n        type: 'html_extraction_error'\n      };\n    }\n  }\n  \n  // 결과 청킹\n  const chunks = [];\n  for (const [extractorName, data] of Object.entries(extractedData)) {\n    if (Array.isArray(data)) {\n      for (let i = 0; i < data.length; i += chunkSize) {\n        chunks.push({\n          extractor: extractorName,\n          chunk_index: Math.floor(i / chunkSize),\n          total_chunks: Math.ceil(data.length / chunkSize),\n          total_items: data.length,\n          items: data.slice(i, i + chunkSize),\n          config: {\n            url: config.url,\n            type: config.type,\n            timestamp: new Date().toISOString()\n          }\n        });\n      }\n    } else {\n      chunks.push({\n        extractor: extractorName,\n        chunk_index: 0,\n        total_chunks: 1,\n        total_items: 1,\n        items: [data],\n        config: {\n          url: config.url,\n          type: config.type,\n          timestamp: new Date().toISOString()\n        }\n      });\n    }\n  }\n  \n  results.push(...chunks);\n}\n\nreturn results.map(result => ({ json: result }));"
+      },
+      "id": "process-html",
+      "name": "Process HTML Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1260,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 최종 결과 포매팅 및 요약\nconst items = $input.all();\nconst results = [];\n\n// 청크별 통계 계산\nconst stats = {\n  total_chunks: items.length,\n  total_items: 0,\n  extractors: {},\n  processing_time: new Date().toISOString()\n};\n\nfor (const item of items) {\n  const data = item.json;\n  \n  stats.total_items += data.total_items || 0;\n  \n  if (!stats.extractors[data.extractor]) {\n    stats.extractors[data.extractor] = {\n      chunks: 0,\n      items: 0\n    };\n  }\n  \n  stats.extractors[data.extractor].chunks++;\n  stats.extractors[data.extractor].items += (data.items || []).length;\n  \n  // AI 에이전트가 사용하기 쉬운 형태로 포매팅\n  const formattedResult = {\n    chunk_id: `${data.extractor}_chunk_${data.chunk_index}`,\n    extractor: data.extractor,\n    chunk_info: {\n      index: data.chunk_index,\n      total_chunks: data.total_chunks,\n      items_in_chunk: (data.items || []).length,\n      total_items: data.total_items\n    },\n    data: data.items || [],\n    metadata: {\n      source_url: data.config?.url,\n      crawler_type: data.config?.type,\n      extracted_at: data.config?.timestamp\n    }\n  };\n  \n  results.push(formattedResult);\n}\n\n// 첫 번째 결과에 전체 통계 추가\nif (results.length > 0) {\n  results[0].crawl_summary = stats;\n}\n\nreturn results.map(result => ({ json: result }));"
+      },
+      "id": "format-output",
+      "name": "Format for AI Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🤖 AI 에이전트 크롤러 실행 완료\n\n### 📊 크롤링 요약\n- **URL**: {{ $json.metadata?.source_url }}\n- **크롤러 타입**: {{ $json.metadata?.crawler_type }}\n- **처리 시간**: {{ $json.metadata?.extracted_at }}\n\n{% if $json.crawl_summary %}\n### 📈 전체 통계\n- **총 청크 수**: {{ $json.crawl_summary.total_chunks }}\n- **총 아이템 수**: {{ $json.crawl_summary.total_items }}\n\n**추출기별 통계**:\n{% for extractor, data in $json.crawl_summary.extractors %}\n- **{{ extractor }}**: {{ data.items }}개 아이템 ({{ data.chunks }}개 청크)\n{% endfor %}\n{% endif %}\n\n### 📦 현재 청크 정보\n- **청크 ID**: {{ $json.chunk_id }}\n- **추출기**: {{ $json.extractor }}\n- **청크 번호**: {{ $json.chunk_info.index + 1 }} / {{ $json.chunk_info.total_chunks }}\n- **이 청크의 아이템 수**: {{ $json.chunk_info.items_in_chunk }}\n\n### 🔍 데이터 미리보기 (상위 3개)\n```json\n{{ JSON.stringify($json.data.slice(0, 3), null, 2) }}\n```\n\n---\n*이 데이터는 AI 에이전트의 툴로 사용할 수 있는 형태로 포매팅되었습니다.*",
+        "options": {}
+      },
+      "id": "ai-report",
+      "name": "AI Agent Report",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        240
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Set Crawler Config": {
+      "main": [
+        [
+          {
+            "node": "Check Crawler Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Crawler Type": {
+      "main": [
+        [
+          {
+            "node": "API Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTML Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Request": {
+      "main": [
+        [
+          {
+            "node": "Process API Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Request": {
+      "main": [
+        [
+          {
+            "node": "Extract HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process API Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HTML": {
+      "main": [
+        [
+          {
+            "node": "Process HTML Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process HTML Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Format for AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for AI Agent": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ai-agent-advanced-crawler"
+  },
+  "id": "ai-agent-advanced-crawler",
+  "tags": [
+    {
+      "createdAt": "2025-07-14T05:20:00.000Z",
+      "updatedAt": "2025-07-14T05:20:00.000Z",
+      "id": "ai-agent",
+      "name": "ai-agent"
+    },
+    {
+      "createdAt": "2025-07-14T05:20:00.000Z",
+      "updatedAt": "2025-07-14T05:20:00.000Z",
+      "id": "advanced-crawler",
+      "name": "advanced-crawler"
+    },
+    {
+      "createdAt": "2025-07-14T05:20:00.000Z",
+      "updatedAt": "2025-07-14T05:20:00.000Z",
+      "id": "chunking",
+      "name": "chunking"
+    }
+  ]
+}
