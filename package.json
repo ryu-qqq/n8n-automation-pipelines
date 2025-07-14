@@ -9,19 +9,25 @@
     "logs": "docker-compose logs -f",
     "backup": "node scripts/backup-workflows.js",
     "restore": "node scripts/restore-workflows.js",
-    "dev": "npm run start && npm run logs"
+    "dev": "npm run start && npm run logs",
+    "crawler": "node crawler/simple-crawler.js",
+    "test-crawler": "node crawler/simple-crawler.js https://example.com"
   },
   "keywords": [
     "n8n",
     "automation",
     "workflow",
     "pipelines",
-    "integration"
+    "integration",
+    "crawler",
+    "web-scraping"
   ],
   "author": "ryu-qqq",
   "license": "MIT",
   "dependencies": {
-    "n8n": "^1.0.0"
+    "n8n": "^1.0.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"
