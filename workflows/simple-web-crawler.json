@@ -1,0 +1,314 @@
+{
+  "name": "Simple Web Crawler",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.target_url || 'https://example.com' }}",
+        "options": {
+          "timeout": 10000
+        },
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+      },
+      "id": "http-request-1",
+      "name": "Fetch Web Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "html_content",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "title",
+              "cssSelector": "title",
+              "returnValue": "text"
+            },
+            {
+              "key": "description",
+              "cssSelector": "meta[name=\"description\"]",
+              "returnValue": "attribute",
+              "attribute": "content"
+            },
+            {
+              "key": "keywords",
+              "cssSelector": "meta[name=\"keywords\"]",
+              "returnValue": "attribute",
+              "attribute": "content"
+            },
+            {
+              "key": "h1_headings",
+              "cssSelector": "h1",
+              "returnValue": "text",
+              "returnArray": true
+            },
+            {
+              "key": "h2_headings",
+              "cssSelector": "h2",
+              "returnValue": "text",
+              "returnArray": true
+            },
+            {
+              "key": "all_links",
+              "cssSelector": "a[href]",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "link_texts",
+              "cssSelector": "a[href]",
+              "returnValue": "text",
+              "returnArray": true
+            },
+            {
+              "key": "images",
+              "cssSelector": "img[src]",
+              "returnValue": "attribute",
+              "attribute": "src",
+              "returnArray": true
+            },
+            {
+              "key": "image_alts",
+              "cssSelector": "img[src]",
+              "returnValue": "attribute",
+              "attribute": "alt",
+              "returnArray": true
+            }
+          ]
+        }
+      },
+      "id": "html-extract-1",
+      "name": "Extract Data",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [
+        600,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-1",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        820,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 크롤링 결과 정리 및 구조화\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // 링크와 텍스트 매칭\n  const links = [];\n  if (data.all_links && data.link_texts) {\n    for (let i = 0; i < Math.min(data.all_links.length, data.link_texts.length); i++) {\n      if (data.all_links[i] && data.link_texts[i]?.trim()) {\n        links.push({\n          url: data.all_links[i],\n          text: data.link_texts[i].trim()\n        });\n      }\n    }\n  }\n  \n  // 이미지와 alt 텍스트 매칭\n  const images = [];\n  if (data.images && data.image_alts) {\n    for (let i = 0; i < Math.min(data.images.length, data.image_alts.length); i++) {\n      if (data.images[i]) {\n        images.push({\n          src: data.images[i],\n          alt: data.image_alts[i] || ''\n        });\n      }\n    }\n  }\n  \n  // 결과 구조화\n  const result = {\n    url: data.target_url || 'Unknown',\n    crawled_at: new Date().toISOString(),\n    page_info: {\n      title: data.title || '',\n      description: data.description || '',\n      keywords: data.keywords || ''\n    },\n    headings: {\n      h1: data.h1_headings || [],\n      h2: data.h2_headings || []\n    },\n    links: links,\n    images: images,\n    stats: {\n      total_links: links.length,\n      total_images: images.length,\n      total_h1: (data.h1_headings || []).length,\n      total_h2: (data.h2_headings || []).length\n    }\n  };\n  \n  results.push(result);\n}\n\nreturn results.map(result => ({ json: result }));"
+      },
+      "id": "code-1",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.stats.total_links }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-1",
+      "name": "Check if Data Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🎉 크롤링 완료!\n\n**URL**: {{ $json.url }}\n**제목**: {{ $json.page_info.title }}\n**크롤링 시간**: {{ $json.crawled_at }}\n\n### 📊 통계\n- 링크 수: {{ $json.stats.total_links }}\n- 이미지 수: {{ $json.stats.total_images }}\n- H1 제목: {{ $json.stats.total_h1 }}\n- H2 제목: {{ $json.stats.total_h2 }}\n\n### 🔗 주요 링크 (상위 5개)\n{{ $json.links.slice(0, 5).map(link => `- [${link.text}](${link.url})`).join('\\n') }}\n\n### 🖼️ 이미지 (상위 3개)\n{{ $json.images.slice(0, 3).map(img => `- ${img.src} (${img.alt})`).join('\\n') }}\n\n---\n*크롤링 데이터는 JSON 형태로 다음 노드로 전달됩니다.*",
+        "options": {}
+      },
+      "id": "html-1",
+      "name": "Success Report",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ 크롤링 실패\n\n**URL**: {{ $('Fetch Web Page').item.json.target_url }}\n**시간**: {{ new Date().toISOString() }}\n\n데이터를 찾을 수 없거나 크롤링에 실패했습니다.\n\n### 가능한 원인:\n- 웹사이트 접근 불가\n- 로봇 차단 (robots.txt)\n- 네트워크 문제\n- 잘못된 URL\n\n다른 URL로 다시 시도해보세요.",
+        "options": {}
+      },
+      "id": "html-2",
+      "name": "Error Report",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assignment-1",
+              "name": "target_url",
+              "value": "https://example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "edit-fields-1",
+      "name": "Set Target URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        160,
+        240
+      ],
+      "notes": "여기서 크롤링할 URL을 설정하세요.\n\n예시:\n- https://news.ycombinator.com\n- https://httpbin.org/html\n- https://quotes.toscrape.com"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Fetch Web Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Check if Data Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Data Found": {
+      "main": [
+        [
+          {
+            "node": "Success Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Target URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch Web Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "custom-crawler-workflow"
+  },
+  "id": "simple-web-crawler",
+  "tags": [
+    {
+      "createdAt": "2025-07-14T05:00:00.000Z",
+      "updatedAt": "2025-07-14T05:00:00.000Z",
+      "id": "crawler",
+      "name": "crawler"
+    },
+    {
+      "createdAt": "2025-07-14T05:00:00.000Z",
+      "updatedAt": "2025-07-14T05:00:00.000Z",
+      "id": "automation",
+      "name": "automation"
+    }
+  ]
+}
